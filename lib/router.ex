@@ -1,7 +1,7 @@
 defmodule TextToShaderApi.Router do
   use Plug.Router
 
-  plug CORSPlug, origin: ["http://localhost:5173"]
+  plug CORSPlug, origin: ["https://two-tab-app.vercel.app/"]
   plug :match
   plug Plug.Parsers,
     parsers: [:json],
