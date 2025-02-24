@@ -24,3 +24,4 @@ text_to_shader-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+.vercel
