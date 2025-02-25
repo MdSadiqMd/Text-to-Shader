@@ -1,13 +1,16 @@
 defmodule TextToShaderApi.Router do
   use Plug.Router
 
-  plug CORSPlug, origin: ["https://two-tab-app.vercel.app/"]
-  plug :match
-  plug Plug.Parsers,
+  plug(CORSPlug, origin: ["https://two-tab-app.vercel.app/"])
+  plug(:match)
+
+  plug(Plug.Parsers,
     parsers: [:json],
     pass: ["application/json"],
     json_decoder: Jason
-  plug :dispatch
+  )
+
+  plug(:dispatch)
 
   @gemini_api_url "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
@@ -21,12 +24,16 @@ defmodule TextToShaderApi.Router do
       {:ok, vertex_shader, fragment_shader} ->
         conn
         |> put_resp_content_type("application/json")
-        |> send_resp(200, Jason.encode!(%{
-          success: true,
-          vertexShader: vertex_shader,
-          fragmentShader: fragment_shader,
-          shaderCode: "// Vertex Shader\n#{vertex_shader}\n\n// Fragment Shader\n#{fragment_shader}"
-        }))
+        |> send_resp(
+          200,
+          Jason.encode!(%{
+            success: true,
+            vertexShader: vertex_shader,
+            fragmentShader: fragment_shader,
+            shaderCode:
+              "// Vertex Shader\n#{vertex_shader}\n\n// Fragment Shader\n#{fragment_shader}"
+          })
+        )
 
       {:error, reason} ->
         conn
@@ -73,45 +80,47 @@ defmodule TextToShaderApi.Router do
       Ensure your shaders are valid WebGL compatible GLSL code with no syntax errors.
       """
 
-    request_body = %{
-      contents: [
-        %{
-          parts: [
-            %{
-              text: full_prompt
-            }
-          ]
+      request_body = %{
+        contents: [
+          %{
+            parts: [
+              %{
+                text: full_prompt
+              }
+            ]
+          }
+        ],
+        generationConfig: %{
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048
         }
-      ],
-      generationConfig: %{
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048
       }
-    }
 
-    url = "#{@gemini_api_url}?key=#{api_key}"
+      url = "#{@gemini_api_url}?key=#{api_key}"
 
-    headers = [
-      {"Content-Type", "application/json"}
-    ]
+      headers = [
+        {"Content-Type", "application/json"}
+      ]
 
-    options = [
-      timeout: @http_timeout,
-      recv_timeout: @recv_timeout
-    ]
+      options = [
+        timeout: @http_timeout,
+        recv_timeout: @recv_timeout
+      ]
 
-    case HTTPoison.post(url, Jason.encode!(request_body), headers, options) do
-      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-        parse_gemini_response(body)
+      case HTTPoison.post(url, Jason.encode!(request_body), headers, options) do
+        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+          parse_gemini_response(body)
 
-      {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
-        error_message = "Gemini API error (HTTP #{status_code}): #{body}"
-        {:error, error_message}
+        {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
+          error_message = "Gemini API error (HTTP #{status_code}): #{body}"
+          {:error, error_message}
 
-      {:error, %HTTPoison.Error{reason: reason}} ->
-        {:error, "HTTP request to Gemini API failed: #{reason}. Make sure your API key is valid and has proper permissions."}
+        {:error, %HTTPoison.Error{reason: reason}} ->
+          {:error,
+           "HTTP request to Gemini API failed: #{reason}. Make sure your API key is valid and has proper permissions."}
+      end
     end
   end
 
@@ -119,7 +128,8 @@ defmodule TextToShaderApi.Router do
     try do
       response = Jason.decode!(body)
 
-      text = get_in(response, ["candidates", Access.at(0), "content", "parts", Access.at(0), "text"])
+      text =
+        get_in(response, ["candidates", Access.at(0), "content", "parts", Access.at(0), "text"])
 
       if is_nil(text) do
         {:error, "Failed to extract text from Gemini response"}
@@ -133,6 +143,7 @@ defmodule TextToShaderApi.Router do
 
           {:ok, %{"vertexShader" => vertex_shader}} when is_binary(vertex_shader) ->
             clean_vertex = clean_shader_code(vertex_shader)
+
             default_fragment = """
             precision mediump float;
             uniform float u_time;
@@ -143,16 +154,19 @@ defmodule TextToShaderApi.Router do
               gl_FragColor = vec4(uv.x, uv.y, sin(u_time) * 0.5 + 0.5, 1.0);
             }
             """
+
             {:ok, clean_vertex, default_fragment}
 
           {:ok, %{"fragmentShader" => fragment_shader}} when is_binary(fragment_shader) ->
             clean_fragment = clean_shader_code(fragment_shader)
+
             default_vertex = """
             attribute vec4 a_position;
             void main() {
               gl_Position = a_position;
             }
             """
+
             {:ok, default_vertex, clean_fragment}
 
           {:error, _} ->
@@ -180,6 +194,7 @@ defmodule TextToShaderApi.Router do
         rescue
           _ -> {:error, "Failed to parse JSON from response"}
         end
+
       nil ->
         {:error, "No JSON found in response"}
     end
@@ -187,32 +202,41 @@ defmodule TextToShaderApi.Router do
 
   defp extract_shaders_with_regex(text) do
     vertex_pattern = ~r/(?:vertex shader|VERTEX SHADER):?[\s\S]*?```(?:glsl)?\s*([\s\S]*?)```/i
-    fragment_pattern = ~r/(?:fragment shader|FRAGMENT SHADER):?[\s\S]*?```(?:glsl)?\s*([\s\S]*?)```/i
 
-    vertex_shader = case Regex.run(vertex_pattern, text, capture: :all_but_first) do
-      [code] -> String.trim(code)
-      _ ->
-        """
-        attribute vec4 a_position;
-        void main() {
-          gl_Position = a_position;
-        }
-        """
-    end
+    fragment_pattern =
+      ~r/(?:fragment shader|FRAGMENT SHADER):?[\s\S]*?```(?:glsl)?\s*([\s\S]*?)```/i
 
-    fragment_shader = case Regex.run(fragment_pattern, text, capture: :all_but_first) do
-      [code] -> String.trim(code)
-      _ ->
-        """
-        precision mediump float;
-        uniform float u_time;
+    vertex_shader =
+      case Regex.run(vertex_pattern, text, capture: :all_but_first) do
+        [code] ->
+          String.trim(code)
 
-        void main() {
-          vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-          gl_FragColor = vec4(uv.x, uv.y, sin(u_time) * 0.5 + 0.5, 1.0);
-        }
-        """
-    end
+        _ ->
+          """
+          attribute vec4 a_position;
+          void main() {
+            gl_Position = a_position;
+          }
+          """
+      end
+
+    fragment_shader =
+      case Regex.run(fragment_pattern, text, capture: :all_but_first) do
+        [code] ->
+          String.trim(code)
+
+        _ ->
+          """
+          precision mediump float;
+          uniform float u_time;
+          uniform vec2 u_resolution;
+
+          void main() {
+            vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+            gl_FragColor = vec4(uv.x, uv.y, sin(u_time) * 0.5 + 0.5, 1.0);
+          }
+          """
+      end
 
     {:ok, vertex_shader, fragment_shader}
   end
