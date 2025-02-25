@@ -1,7 +1,9 @@
 defmodule TextToShaderApi.Router do
   use Plug.Router
 
-  plug(CORSPlug, origin: ["https://two-tab-app.vercel.app/"])
+  @frontend_origin System.get_env("FRONTEND_ORIGIN") || "https://two-tab-app.vercel.app"
+
+  plug(CORSPlug, origin: [@frontend_origin])
   plug(:match)
 
   plug(Plug.Parsers,
