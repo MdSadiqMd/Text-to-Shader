@@ -11,8 +11,8 @@ defmodule TextToShaderApi.Router do
 
   @gemini_api_url "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
-  @http_timeout 30_000
-  @recv_timeout 30_000
+  @http_timeout 60_000
+  @recv_timeout 60_000
 
   post "/api/generate-shader" do
     %{"prompt" => prompt} = conn.body_params
@@ -40,25 +40,38 @@ defmodule TextToShaderApi.Router do
   end
 
   defp generate_shader_from_llm(prompt) do
-    api_key = "AIzaSyDpXEv_W5sbqD_kPywilmShS--is_OxbMY"
+    api_key = System.get_env("GEMINI_API_KEY")
 
-    full_prompt = """
-    Create a WebGL shader pair (vertex and fragment shaders) based on this description: #{prompt}
+    if is_nil(api_key) or api_key == "" do
+      {:error,
+       "Missing GEMINI_API_KEY environment variable. Please set it before running the application."}
+    else
+      full_prompt = """
+      You are an expert WebGL shader programmer. Create a creative, visually stunning WebGL shader pair (vertex and fragment shaders) based on this description: #{prompt}
 
-    Please return your answer in the following JSON format:
-    {
-      "vertexShader": "vertex shader code here (enclosed in ```glsl code blocks)",
-      "fragmentShader": "fragment shader code here (enclosed in ```glsl code blocks)"
-    }
+      Follow these guidelines:
+      - Use standard WebGL (GLSL ES) syntax
+      - Include comments explaining key sections
+      - Use essential uniforms like u_time, u_resolution, and u_mouse as needed
+      - Ensure vertex and fragment shaders work together properly
+      - Make creative use of mathematical functions for visual interest
+      - Include fallbacks for any complex functions that might not be supported
+      - Optimize for performance where possible
 
-    Example response:
-    {
-      "vertexShader": "```glsl\\nattribute vec4 a_position;\\nvoid main() {\\n  gl_Position = a_position;\\n}\\n```",
-      "fragmentShader": "```glsl\\nprecision mediump float;\\nuniform float u_time;\\nvoid main() {\\n  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\\n}\\n```"
-    }
+      Please return your answer in the following JSON format:
+      {
+        "vertexShader": "vertex shader code here (enclosed in ```glsl code blocks)",
+        "fragmentShader": "fragment shader code here (enclosed in ```glsl code blocks)"
+      }
 
-    Ensure the code is valid WebGL and uses necessary uniforms like u_time if animations are needed.
-    """
+      Example response:
+      {
+        "vertexShader": "```glsl\\nattribute vec4 a_position;\\nuniform mat4 u_modelViewMatrix;\\nuniform mat4 u_projectionMatrix;\\nvoid main() {\\n  // Transform the vertex position\\n  gl_Position = u_projectionMatrix * u_modelViewMatrix * a_position;\\n}\\n```",
+        "fragmentShader": "```glsl\\nprecision mediump float;\\nuniform float u_time;\\nuniform vec2 u_resolution;\\nvoid main() {\\n  // Calculate normalized coordinates\\n  vec2 uv = gl_FragCoord.xy/u_resolution.xy;\\n  // Create a time-based color animation\\n  vec3 color = 0.5 + 0.5 * cos(u_time + uv.xyx + vec3(0,2,4));\\n  gl_FragColor = vec4(color, 1.0);\\n}\\n```"
+      }
+
+      Ensure your shaders are valid WebGL compatible GLSL code with no syntax errors.
+      """
 
     request_body = %{
       contents: [
@@ -74,7 +87,7 @@ defmodule TextToShaderApi.Router do
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 1024
+        maxOutputTokens: 2048
       }
     }
 
@@ -123,9 +136,10 @@ defmodule TextToShaderApi.Router do
             default_fragment = """
             precision mediump float;
             uniform float u_time;
+            uniform vec2 u_resolution;
 
             void main() {
-              vec2 uv = gl_FragCoord.xy / vec2(800.0, 600.0);
+              vec2 uv = gl_FragCoord.xy / u_resolution.xy;
               gl_FragColor = vec4(uv.x, uv.y, sin(u_time) * 0.5 + 0.5, 1.0);
             }
             """
@@ -194,7 +208,7 @@ defmodule TextToShaderApi.Router do
         uniform float u_time;
 
         void main() {
-          vec2 uv = gl_FragCoord.xy / vec2(800.0, 600.0);
+          vec2 uv = gl_FragCoord.xy / u_resolution.xy;
           gl_FragColor = vec4(uv.x, uv.y, sin(u_time) * 0.5 + 0.5, 1.0);
         }
         """
