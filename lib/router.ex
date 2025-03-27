@@ -1,10 +1,10 @@
 defmodule TextToShaderApi.Router do
   use Plug.Router
 
-  @frontend_origin System.get_env("FRONTEND_ORIGIN") || "https://two-tab-app.vercel.app"
+  @frontend_origin "*"
 
-  plug(CORSPlug, origin: [@frontend_origin])
   plug(:match)
+  plug(CORSPlug, origin: "*")
 
   plug(Plug.Parsers,
     parsers: [:json],
@@ -14,10 +14,14 @@ defmodule TextToShaderApi.Router do
 
   plug(:dispatch)
 
-  @gemini_api_url "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+  @gemini_api_url "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent"
 
   @http_timeout 60_000
   @recv_timeout 60_000
+
+  post "/ping" do
+    send_resp(conn, 200, "pong")
+  end
 
   post "/api/generate-shader" do
     %{"prompt" => prompt} = conn.body_params
